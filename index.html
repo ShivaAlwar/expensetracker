@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Expense Tracker - Shiva</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f1f5f9; /* Slate 100 for better glass contrast */
+            background-image: 
+                radial-gradient(at 0% 0%, hsla(253,16%,7%,0.03) 0, transparent 50%), 
+                radial-gradient(at 50% 0%, hsla(225,39%,30%,0.03) 0, transparent 50%), 
+                radial-gradient(at 100% 0%, hsla(339,49%,30%,0.03) 0, transparent 50%);
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        /* Modern Glassmorphism Cards */
+        .dashboard-card {
+            background: rgba(255, 255, 255, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-radius: 1.25rem;
+            box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 0 3px rgba(255,255,255,0.3) inset;
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
+        }
+        
+        .dashboard-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 0 3px rgba(255,255,255,0.5) inset;
+        }
+
+        .glass-header {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.6);
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .animate-spin-custom { animation: spin 1s linear infinite; }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        
+        /* Modal Transition */
+        .modal-enter { opacity: 0; transform: scale(0.95); }
+        .modal-enter-active { opacity: 1; transform: scale(1); transition: opacity 300ms cubic-bezier(0.16, 1, 0.3, 1), transform 300ms cubic-bezier(0.16, 1, 0.3, 1); }
+        .modal-leave { opacity: 1; transform: scale(1); }
+        .modal-leave-active { opacity: 0; transform: scale(0.95); transition: opacity 200ms ease-in, transform 200ms ease-in; }
+
+        /* Sync Banner Animation */
+        .banner-glow {
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 70%);
+            top: -150px;
+            right: -100px;
+            border-radius: 50%;
+            pointer-events: none;
+            animation: pulse-glow 4s infinite alternate ease-in-out;
+        }
+        
+        @keyframes pulse-glow {
+            0% { transform: scale(1); opacity: 0.5; }
+            100% { transform: scale(1.1); opacity: 0.8; }
+        }
+    </style>
+</head>
+<body class="text-slate-800 h-screen flex flex-col overflow-hidden">
+
+    <header class="glass-header shadow-sm z-20 flex-shrink-0 sticky top-0">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-3 transition-transform hover:scale-105 duration-300">
+                <div class="bg-gradient-to-br from-indigo-600 to-purple-700 p-2.5 rounded-xl shadow-md border border-indigo-400/30">
+                    <i class="fa-solid fa-wallet text-lg text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight text-slate-900 leading-tight">Expense Tracker - Shiva</h1>
+                </div>
+            </div>
+            <div class="flex items-center space-x-3">
+                <div class="text-xs font-semibold bg-white/80 backdrop-blur-md text-slate-700 px-3 py-2 rounded-full flex items-center space-x-2 border border-slate-200/60 shadow-sm hidden sm:flex">
+                    <i class="fa-solid fa-circle-user text-indigo-500"></i>
+                    <span id="user-status">Connecting...</span>
+                </div>
+                <!-- Settings Button -->
+                <button id="btn-open-settings" class="p-2.5 bg-white/80 hover:bg-white text-slate-700 rounded-full transition-all duration-300 w-10 h-10 flex items-center justify-center border border-slate-200/60 shadow-sm hover:shadow-md hover:-translate-y-0.5">
+                    <i class="fa-solid fa-gear"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 overflow-y-auto p-4 sm:p-6 w-full max-w-7xl mx-auto space-y-6 pb-24">
+        
+        <!-- Gmail Sync Banner -->
+        <div class="bg-gradient-to-r from-indigo-600 via-blue-700 to-indigo-800 rounded-2xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden border border-indigo-400/20">
+            <div class="banner-glow"></div>
+            
+            <div class="flex flex-col md:flex-row md:items-center justify-between relative z-10 gap-5">
+                <div class="max-w-xl">
+                    <h2 class="text-2xl font-bold flex items-center mb-2 tracking-tight">
+                        <i class="fa-brands fa-google mr-3 text-2xl drop-shadow-md"></i> Auto-Sync Engine
+                    </h2>
+                    <p class="text-blue-100 text-sm md:text-base leading-relaxed opacity-90 font-medium">
+                        Connect Gmail to scan for bank alerts. Gemini AI will auto-extract expenses, categorizing even niche items like Mutual Funds or Bike Maintenance.
+                    </p>
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-3 shrink-0">
+                    <button id="btn-real-sync" class="bg-white text-indigo-700 hover:bg-blue-50 hover:scale-105 active:scale-95 font-bold py-3 px-5 rounded-xl transition-all duration-300 shadow-lg flex items-center justify-center w-full sm:w-auto">
+                        <i class="fa-solid fa-link mr-2"></i> Connect & Sync
+                    </button>
+                    <button id="btn-sim-sync" class="bg-indigo-900/40 hover:bg-indigo-900/60 backdrop-blur-md border border-indigo-300/30 text-white hover:scale-105 active:scale-95 font-medium py-3 px-5 rounded-xl transition-all duration-300 flex items-center justify-center w-full sm:w-auto shadow-sm">
+                        <i class="fa-solid fa-flask mr-2"></i> Mock Data
+                    </button>
+                </div>
+            </div>
+            
+            <div id="sync-progress" class="hidden mt-5 bg-black/20 rounded-xl p-3 flex items-center space-x-3 border border-white/10 backdrop-blur-md transition-all duration-300">
+                <i class="fa-solid fa-circle-notch animate-spin-custom text-blue-300"></i>
+                <div class="text-sm font-medium text-white tracking-wide" id="sync-progress-text">Connecting...</div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-5">
+            <div class="dashboard-card p-5 flex flex-col justify-center relative overflow-hidden group col-span-2 md:col-span-1 border-t-4 border-t-indigo-500">
+                <div class="absolute top-0 right-0 -mr-4 -mt-4 w-20 h-20 bg-indigo-500/10 rounded-full blur-xl transition-all group-hover:bg-indigo-500/20"></div>
+                <div class="flex justify-between items-start mb-2 relative z-10">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Net Balance</p>
+                    <div class="bg-indigo-100 p-2 rounded-lg text-indigo-500"><i class="fa-solid fa-scale-balanced"></i></div>
+                </div>
+                <h3 class="text-3xl font-extrabold text-slate-800 tracking-tight relative z-10" id="card-balance">₹0.00</h3>
+            </div>
+            <div class="dashboard-card p-5 flex flex-col justify-center relative overflow-hidden group border-t-4 border-t-emerald-500">
+                <div class="absolute top-0 right-0 -mr-4 -mt-4 w-20 h-20 bg-emerald-500/10 rounded-full blur-xl transition-all group-hover:bg-emerald-500/20"></div>
+                <div class="flex justify-between items-start mb-2 relative z-10">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Credits</p>
+                    <div class="bg-emerald-100 p-2 rounded-lg text-emerald-500"><i class="fa-solid fa-arrow-down"></i></div>
+                </div>
+                <h3 class="text-2xl font-extrabold text-emerald-600 tracking-tight relative z-10" id="card-income">₹0.00</h3>
+            </div>
+            <div class="dashboard-card p-5 flex flex-col justify-center relative overflow-hidden group border-t-4 border-t-rose-500">
+                <div class="absolute top-0 right-0 -mr-4 -mt-4 w-20 h-20 bg-rose-500/10 rounded-full blur-xl transition-all group-hover:bg-rose-500/20"></div>
+                <div class="flex justify-between items-start mb-2 relative z-10">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Debits</p>
+                    <div class="bg-rose-100 p-2 rounded-lg text-rose-500"><i class="fa-solid fa-arrow-up"></i></div>
+                </div>
+                <h3 class="text-2xl font-extrabold text-rose-600 tracking-tight relative z-10" id="card-expense">₹0.00</h3>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="dashboard-card p-6 lg:col-span-2 flex flex-col min-h-[380px]">
+                <h2 class="text-lg font-bold text-slate-800 mb-4 border-b border-slate-200/60 pb-3 flex items-center">
+                    <i class="fa-solid fa-chart-pie mr-2 text-indigo-500"></i> Expenses by Category
+                </h2>
+                <div class="flex-1 relative w-full h-full flex justify-center items-center min-h-[250px] p-2">
+                    <canvas id="categoryChart"></canvas>
+                    <div id="chart-empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 bg-white/50 backdrop-blur-sm z-10 rounded-xl transition-opacity">
+                        <i class="fa-solid fa-chart-pie text-5xl mb-3 text-slate-200 drop-shadow-sm"></i>
+                        <p class="text-sm font-semibold tracking-wide">Add transactions to see breakdown</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dashboard-card p-6 lg:col-span-1 flex flex-col relative overflow-hidden">
+                <div class="absolute -right-10 -bottom-10 opacity-5 pointer-events-none">
+                    <i class="fa-solid fa-microchip text-[150px] text-indigo-900"></i>
+                </div>
+                <h2 class="text-lg font-bold text-slate-800 mb-2 flex items-center border-b border-slate-200/60 pb-3">
+                    <i class="fa-solid fa-wand-magic-sparkles text-indigo-500 mr-2"></i> AI Manual Parser
+                </h2>
+                <p class="text-xs font-medium text-slate-500 mb-4 tracking-wide">Paste SMS or Email alert here.</p>
+                <textarea id="parser-input" class="w-full flex-1 rounded-xl border border-slate-300 p-4 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all resize-none bg-slate-50/50 hover:bg-slate-50 mb-5 min-h-[140px] shadow-inner font-medium placeholder:text-slate-400 relative z-10" placeholder="e.g. INR 1200 spent on bike service at Castrol Pitstop from a/c **1234."></textarea>
+                <button id="btn-parse" class="w-full bg-slate-800 hover:bg-indigo-600 text-white font-bold py-3.5 px-4 rounded-xl transition-all duration-300 flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed mt-auto shadow-md hover:shadow-lg hover:-translate-y-0.5 relative z-10">
+                    <i class="fa-solid fa-microchip text-indigo-300"></i>
+                    <span id="btn-parse-text" class="tracking-wide">Extract with AI</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="dashboard-card overflow-hidden flex flex-col mb-8 shadow-sm hover:shadow-md transition-shadow">
+            <div class="p-5 border-b border-slate-200/60 flex justify-between items-center bg-white/40">
+                <h2 class="text-lg font-bold text-slate-800 flex items-center">
+                    <i class="fa-solid fa-list-ul mr-2 text-indigo-500"></i> Recent Transactions
+                </h2>
+            </div>
+            <div class="overflow-x-auto max-h-[450px]">
+                <table class="w-full text-sm text-left">
+                    <thead class="text-[11px] text-slate-500 bg-slate-50/80 uppercase font-bold tracking-widest sticky top-0 z-10 backdrop-blur-md">
+                        <tr>
+                            <th class="px-5 py-4">Details</th>
+                            <th class="px-5 py-4">Category</th>
+                            <th class="px-5 py-4 text-right">Amount</th>
+                            <th class="px-5 py-4 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tx-tbody" class="divide-y divide-slate-100 bg-white/30">
+                        <tr><td colspan="4" class="px-5 py-8 text-center text-slate-400 font-medium"><i class="fa-solid fa-spinner animate-spin-custom mr-2"></i> Loading data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Settings Modal Overlay -->
+    <div id="settings-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex justify-center items-center p-4 transition-opacity duration-300">
+        <div id="settings-card" class="bg-white/95 backdrop-blur-xl rounded-2xl w-full max-w-md p-7 shadow-2xl modal-enter border border-white/20">
+            <div class="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
+                <h2 class="text-xl font-extrabold text-slate-800 tracking-tight"><i class="fa-solid fa-sliders text-indigo-500 mr-2"></i> App Settings</h2>
+                <button id="btn-close-settings" class="text-slate-400 hover:text-rose-500 p-2 rounded-full hover:bg-rose-50 transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="space-y-5">
+                <div class="bg-indigo-50 text-indigo-700 p-3.5 rounded-xl text-xs mb-2 border border-indigo-100 flex items-start gap-2 shadow-sm font-medium">
+                    <i class="fa-solid fa-shield-halved mt-0.5 text-indigo-500 text-sm"></i> 
+                    <span>These API keys are encrypted and saved strictly locally on your device.</span>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1">Google Client ID</label>
+                    <p class="text-[11px] text-slate-500 mb-2 font-medium">Required for Gmail Auto-Sync Engine.</p>
+                    <input type="text" id="input-client-id" class="w-full rounded-xl border border-slate-300 p-3.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-slate-50 transition-all shadow-inner" placeholder="e.g. 12345-abc.apps.googleusercontent.com">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1">Gemini API Key</label>
+                    <p class="text-[11px] text-slate-500 mb-2 font-medium">Required for AI intelligence and categorization.</p>
+                    <input type="password" id="input-gemini-key" class="w-full rounded-xl border border-slate-300 p-3.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-slate-50 transition-all shadow-inner" placeholder="Paste Gemini API Key">
+                </div>
+            </div>
+
+            <button id="btn-save-settings" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-xl mt-8 transition-all duration-300 shadow-md hover:shadow-lg hover:-translate-y-0.5 tracking-wide">
+                Save Configurations
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-sm z-[60] flex flex-col gap-3 pointer-events-none"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, collection, addDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'shiva-tracker-mobile';
+        let firebaseConfig = null;
+        if (typeof __firebase_config !== 'undefined') {
+            try { firebaseConfig = JSON.parse(__firebase_config); } catch (e) { }
+        }
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        const app = initializeApp(firebaseConfig || {});
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // App State
+        let currentUser = null;
+        let transactions = [];
+        let unsubscribeSnapshot = null;
+        let expenseChart = null;
+
+        // Configuration State
+        let config = {
+            clientId: localStorage.getItem('shiva_client_id') || '',
+            geminiKey: localStorage.getItem('shiva_gemini_key') || ''
+        };
+
+        const CATEGORY_COLORS = { 
+            'grocery': '#22c55e', 
+            'food': '#f97316', 
+            'movie': '#a855f7', 
+            'petrol': '#ef4444', 
+            'transport': '#3b82f6', 
+            'cab': '#eab308', 
+            'investment': '#8b5cf6', 
+            'vegetables': '#84cc16', 
+            'meat': '#be123c', 
+            'milk': '#94a3b8', 
+            'fashion': '#ec4899', 
+            'flipkart': '#2563eb', 
+            'amazon': '#f59e0b', 
+            'swiggy': '#fc8019', 
+            'For Mom': '#f43f5e', 
+            'extra': '#64748b' 
+        };
+        
+        const CATEGORY_ICONS = { 
+            'grocery': 'fa-basket-shopping', 
+            'food': 'fa-utensils', 
+            'movie': 'fa-film', 
+            'petrol': 'fa-gas-pump', 
+            'transport': 'fa-bus', 
+            'cab': 'fa-taxi', 
+            'investment': 'fa-chart-line', 
+            'vegetables': 'fa-carrot', 
+            'meat': 'fa-drumstick-bite', 
+            'milk': 'fa-bottle-droplet', 
+            'fashion': 'fa-shirt', 
+            'flipkart': 'fa-bag-shopping', 
+            'amazon': 'fa-brands fa-amazon', 
+            'swiggy': 'fa-motorcycle', 
+            'For Mom': 'fa-heart', 
+            'extra': 'fa-receipt' 
+        };
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const bgClass = type === 'success' ? 'bg-slate-900/95' : 'bg-rose-600/95';
+            const iconClass = type === 'success' ? 'fa-circle-check text-emerald-400' : 'fa-circle-exclamation text-white';
+            
+            toast.className = `${bgClass} backdrop-blur-md text-white px-4 py-3.5 rounded-xl shadow-2xl flex items-center space-x-3 transform transition-all duration-400 translate-y-12 opacity-0 border border-white/10 w-full font-medium`;
+            toast.innerHTML = `<i class="fa-solid ${iconClass} text-lg shrink-0 drop-shadow-sm"></i><span class="text-sm tracking-wide leading-tight">${message}</span>`;
+            
+            container.appendChild(toast);
+            requestAnimationFrame(() => toast.classList.remove('translate-y-12', 'opacity-0'));
+            setTimeout(() => {
+                toast.classList.add('translate-y-12', 'opacity-0');
+                setTimeout(() => toast.remove(), 400);
+            }, 4000);
+        }
+
+        function formatMoney(amount) {
+            return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+        }
+
+        function formatDate(dateStr) {
+            try {
+                const d = new Date(dateStr);
+                if (isNaN(d.getTime())) return dateStr;
+                return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+            } catch (e) { return dateStr; }
+        }
+
+        // Settings Modal Handlers
+        const modal = document.getElementById('settings-modal');
+        const modalInner = document.getElementById('settings-card');
+        const inputClientId = document.getElementById('input-client-id');
+        const inputGeminiKey = document.getElementById('input-gemini-key');
+
+        function openSettings() {
+            inputClientId.value = config.clientId;
+            inputGeminiKey.value = config.geminiKey;
+            modal.classList.remove('hidden');
+            requestAnimationFrame(() => {
+                modalInner.classList.remove('modal-enter');
+                modalInner.classList.add('modal-enter-active');
+            });
+        }
+
+        function closeSettings() {
+            modalInner.classList.remove('modal-enter-active');
+            modalInner.classList.add('modal-leave-active');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modalInner.classList.remove('modal-leave-active');
+                modalInner.classList.add('modal-enter');
+            }, 200);
+        }
+
+        document.getElementById('btn-open-settings').addEventListener('click', openSettings);
+        document.getElementById('btn-close-settings').addEventListener('click', closeSettings);
+        document.getElementById('btn-save-settings').addEventListener('click', () => {
+            const newClientId = inputClientId.value.trim();
+            const newGeminiKey = inputGeminiKey.value.trim();
+            
+            localStorage.setItem('shiva_client_id', newClientId);
+            localStorage.setItem('shiva_gemini_key', newGeminiKey);
+            
+            config.clientId = newClientId;
+            config.geminiKey = newGeminiKey;
+            
+            showToast("Configurations saved securely.");
+            closeSettings();
+        });
+
+        async function authenticateUser() {
+            try {
+                if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
+                else await signInAnonymously(auth);
+            } catch (e) { console.error("Auth failed:", e); }
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            const statusEl = document.getElementById('user-status');
+            if (user) {
+                currentUser = user;
+                statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><span>Live Sync Active</span>';
+                setupDataListener();
+            } else {
+                currentUser = null;
+                statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-400"></span><span>Offline</span>';
+                if (unsubscribeSnapshot) unsubscribeSnapshot();
+            }
+        });
+
+        function setupDataListener() {
+            if (!currentUser) return;
+            const path = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'transactions');
+            
+            unsubscribeSnapshot = onSnapshot(path, (snapshot) => {
+                transactions = [];
+                snapshot.forEach(doc => transactions.push({ id: doc.id, ...doc.data() }));
+                transactions.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                updateDashboardUI();
+            }, (error) => showToast("Database sync failed.", "error"));
+        }
+
+        window.deleteTx = async (docId) => {
+            if (!currentUser) return;
+            try {
+                await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'transactions', docId));
+                showToast("Transaction removed.", "success");
+            } catch (error) { showToast("Could not delete record.", "error"); }
+        };
+
+        function updateDashboardUI() {
+            let totalInc = 0, totalExp = 0;
+            const categorySums = {};
+
+            transactions.forEach(tx => {
+                const amt = parseFloat(tx.amount) || 0;
+                if (tx.type === 'debit' || tx.type === 'expense') {
+                    totalExp += amt;
+                    categorySums[tx.category] = (categorySums[tx.category] || 0) + amt;
+                } else totalInc += amt;
+            });
+
+            document.getElementById('card-income').innerText = formatMoney(totalInc);
+            document.getElementById('card-expense').innerText = formatMoney(totalExp);
+            document.getElementById('card-balance').innerText = formatMoney(totalInc - totalExp);
+
+            updateChart(categorySums);
+            renderTable();
+        }
+
+        function updateChart(categorySums) {
+            const labels = Object.keys(categorySums);
+            const data = Object.values(categorySums);
+            const emptyState = document.getElementById('chart-empty-state');
+            
+            if (labels.length === 0) {
+                emptyState.classList.remove('hidden');
+                emptyState.style.opacity = '1';
+                if (expenseChart) { expenseChart.destroy(); expenseChart = null; }
+                return;
+            }
+
+            emptyState.style.opacity = '0';
+            setTimeout(() => emptyState.classList.add('hidden'), 300);
+
+            const bgColors = labels.map(lbl => CATEGORY_COLORS[lbl] || CATEGORY_COLORS['Other']);
+            const ctx = document.getElementById('categoryChart').getContext('2d');
+            
+            if (expenseChart) {
+                expenseChart.data.labels = labels;
+                expenseChart.data.datasets[0].data = data;
+                expenseChart.data.datasets[0].backgroundColor = bgColors;
+                expenseChart.update();
+            } else {
+                Chart.defaults.font.family = 'Inter';
+                Chart.defaults.color = '#64748b';
+                expenseChart = new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: labels,
+                        datasets: [{ 
+                            data: data, 
+                            backgroundColor: bgColors, 
+                            borderWidth: 3, 
+                            borderColor: '#ffffff',
+                            hoverOffset: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true, 
+                        maintainAspectRatio: false, 
+                        animation: { animateScale: true, animateRotate: true },
+                        plugins: {
+                            legend: { position: 'right', labels: { usePointStyle: true, padding: 15, font: { size: 11, weight: '600' } } },
+                            tooltip: {
+                                backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                                titleFont: { size: 13 },
+                                bodyFont: { size: 13, weight: 'bold' },
+                                padding: 12,
+                                cornerRadius: 8,
+                                displayColors: true,
+                                boxPadding: 4
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('tx-tbody');
+            tbody.innerHTML = '';
+            
+            if (transactions.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="px-5 py-10 text-center text-slate-400 text-sm font-medium">No transactions found. Connect Gmail or manually parse data to start.</td></tr>`;
+                return;
+            }
+
+            transactions.forEach(tx => {
+                const isExp = tx.type === 'debit' || tx.type === 'expense';
+                const sign = isExp ? '-' : '+';
+                const amtColor = isExp ? 'text-slate-900' : 'text-emerald-600';
+                const catColor = CATEGORY_COLORS[tx.category] || CATEGORY_COLORS['Other'];
+                const catIcon = CATEGORY_ICONS[tx.category] || CATEGORY_ICONS['Other'];
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50/50 transition-colors group";
+                tr.innerHTML = `
+                    <td class="px-5 py-4">
+                        <div class="font-bold text-slate-800 text-xs sm:text-sm tracking-tight">${tx.merchant}</div>
+                        <div class="text-[11px] text-slate-500 font-medium mt-0.5">${formatDate(tx.date)}</div>
+                    </td>
+                    <td class="px-5 py-4 whitespace-nowrap">
+                        <div class="flex items-center space-x-2.5">
+                            <div class="w-7 h-7 rounded-full flex items-center justify-center text-white shadow-sm transform transition-transform group-hover:scale-110" style="background-color: ${catColor}">
+                                <i class="fa-solid ${catIcon} text-[11px]"></i>
+                            </div>
+                            <span class="text-slate-600 font-semibold text-xs hidden sm:inline">${tx.category}</span>
+                        </div>
+                    </td>
+                    <td class="px-5 py-4 whitespace-nowrap text-right font-extrabold ${amtColor} text-sm tracking-tight">
+                        ${sign}${formatMoney(tx.amount)}
+                    </td>
+                    <td class="px-5 py-4 whitespace-nowrap text-center">
+                        <button onclick="deleteTx('${tx.id}')" class="text-slate-400 hover:text-rose-500 hover:bg-rose-50 p-2 rounded-full transition-all opacity-70 hover:opacity-100 focus:outline-none">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function parseTextWithAI(rawText) {
+            if (!config.geminiKey) throw new Error("API_KEY_MISSING");
+            
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${config.geminiKey}`;
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    amount: { type: "NUMBER" }, 
+                    date: { type: "STRING" }, 
+                    merchant: { type: "STRING" },
+                    category: { type: "STRING" }, 
+                    type: { type: "STRING" }
+                },
+                required: ["amount", "date", "merchant", "category", "type"]
+            };
+
+            const payload = {
+                systemInstruction: { 
+                    parts: [{ 
+                        text: "Extract Indian bank/wallet transaction details from the text into JSON. " + 
+                              "Map the category STRICTLY to one of the following exactly as written: " + 
+                              "'grocery', 'food', 'movie', 'petrol', 'transport', 'cab', 'investment', 'vegetables', 'meat', 'milk', 'fashion', 'flipkart', 'amazon', 'swiggy', 'For Mom', 'extra'. " + 
+                              "Analyze the Merchant name and keywords from the UPI string to deduce the most accurate category. If a clear match isn't found, default to 'extra'. " +
+                              "Type MUST be either 'debit' or 'credit'." 
+                    }] 
+                },
+                contents: [{ parts: [{ text: rawText }] }],
+                generationConfig: { responseMimeType: "application/json", responseSchema: schema }
+            };
+
+            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!response.ok) throw new Error("API Request Failed");
+            const result = await response.json();
+            return JSON.parse(result.candidates[0].content.parts[0].text);
+        }
+
+        const btnParse = document.getElementById('btn-parse');
+        btnParse.addEventListener('click', async () => {
+            const rawText = document.getElementById('parser-input').value.trim();
+            if (!rawText) return showToast("Please paste an alert text.", "error");
+            if (!config.geminiKey) {
+                openSettings();
+                return showToast("Please enter your Gemini API Key first.", "error");
+            }
+
+            btnParse.disabled = true;
+            document.getElementById('btn-parse-text').innerText = "Analyzing Context...";
+            const icon = btnParse.querySelector('i');
+            icon.className = "fa-solid fa-spinner animate-spin-custom text-indigo-300";
+
+            try {
+                const txData = await parseTextWithAI(rawText);
+                await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'transactions'), {
+                    ...txData, source: 'manual', createdAt: Date.now()
+                });
+                document.getElementById('parser-input').value = '';
+                showToast(`Successfully extracted: ${txData.merchant}`, 'success');
+            } catch (error) {
+                if(error.message === "API_KEY_MISSING") { openSettings(); showToast("API Key missing.", "error"); }
+                else showToast("AI Failed to parse the text.", "error");
+            } finally {
+                btnParse.disabled = false;
+                document.getElementById('btn-parse-text').innerText = "Extract with AI";
+                icon.className = "fa-solid fa-microchip text-indigo-300";
+            }
+        });
+
+        document.getElementById('btn-real-sync').addEventListener('click', () => {
+            if (!config.clientId) {
+                openSettings();
+                return showToast("Please enter Google Client ID first.", "error");
+            }
+            if (!config.geminiKey) {
+                openSettings();
+                return showToast("Please enter Gemini API Key first.", "error");
+            }
+
+            const tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: config.clientId,
+                scope: 'https://www.googleapis.com/auth/gmail.readonly',
+                callback: (tokenResponse) => {
+                    if (tokenResponse && tokenResponse.access_token) fetchRealAxisEmails(tokenResponse.access_token);
+                }
+            });
+            tokenClient.requestAccessToken();
+        });
+
+        async function fetchRealAxisEmails(accessToken) {
+            const progress = document.getElementById('sync-progress');
+            const progressTxt = document.getElementById('sync-progress-text');
+            progress.classList.remove('hidden');
+            progressTxt.innerText = "Scanning secure inbox...";
+            
+            try {
+                const query = encodeURIComponent("from:alerts@axisbank.com OR subject:'Transaction Alert'");
+                const listResp = await fetch(`https://gmail.googleapis.com/v1/users/me/messages?q=${query}&maxResults=3`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                
+                const listData = await listResp.json();
+                if (!listData.messages || listData.messages.length === 0) {
+                    progress.classList.add('hidden');
+                    return showToast("No recent alerts found in inbox.", "error");
+                }
+
+                progressTxt.innerText = "Extracting transaction details...";
+                let added = 0;
+                for (const msg of listData.messages) {
+                    const msgResp = await fetch(`https://gmail.googleapis.com/v1/users/me/messages/${msg.id}?format=metadata`, {
+                        headers: { 'Authorization': `Bearer ${accessToken}` }
+                    });
+                    const msgData = await msgResp.json();
+                    if (msgData.snippet) {
+                        try {
+                            const txData = await parseTextWithAI(msgData.snippet);
+                            await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'transactions'), {
+                                ...txData, source: 'gmail', createdAt: Date.now()
+                            });
+                            added++;
+                        } catch (e) { console.warn("Skip processing error:", e); }
+                    }
+                }
+                showToast(`Synced ${added} new transactions!`, "success");
+            } catch (err) {
+                showToast("Gmail sync encountered an error.", "error");
+            } finally {
+                progress.classList.add('hidden');
+            }
+        }
+
+        // Mock Simulation containing the new specific categories
+        const mockEmails = [
+            "Alert: INR 1200 debited at Amazon for shopping.", 
+            "Success: SIP of INR 5000 towards Mutual Funds deduction completed.",
+            "Alert: INR 450 debited at Swiggy for Food.",
+            "Debited: INR 350 for Uber cab ride.",
+            "Alert: INR 80 debited for Nandini Milk parlor UPI."
+        ];
+        
+        document.getElementById('btn-sim-sync').addEventListener('click', async () => {
+            if (!config.geminiKey) { openSettings(); return showToast("Gemini API Key required for analysis.", "error"); }
+            
+            const progress = document.getElementById('sync-progress');
+            const progressTxt = document.getElementById('sync-progress-text');
+            progress.classList.remove('hidden');
+            
+            try {
+                for (let i = 0; i < mockEmails.length; i++) {
+                    progressTxt.innerText = `Processing Mock ${i+1}/${mockEmails.length}...`;
+                    const txData = await parseTextWithAI(mockEmails[i]);
+                    await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'transactions'), {
+                        ...txData, source: 'mock', createdAt: Date.now() + i
+                    });
+                }
+                showToast("Mock data synced successfully!", "success");
+            } catch(e) { 
+                showToast("Error parsing mock data.", "error"); 
+            } finally { 
+                progress.classList.add('hidden'); 
+            }
+        });
+
+        // App Start
+        window.addEventListener('DOMContentLoaded', authenticateUser);
+    </script>
+</body>
+</html>
